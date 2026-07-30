@@ -1,0 +1,34 @@
+from enum import IntEnum
+
+
+class WD_ALIGN_PARAGRAPH(IntEnum):
+    LEFT = 0
+    CENTER = 1
+    RIGHT = 2
+    JUSTIFY = 3
+    DISTRIBUTE = 4
+    JUSTIFY_MED = 5
+    JUSTIFY_HI = 7
+    JUSTIFY_LOW = 8
+    THAI_JUSTIFY = 9
+
+
+WD_PARAGRAPH_ALIGNMENT = WD_ALIGN_PARAGRAPH
+
+
+class WD_BREAK(IntEnum):
+    LINE = 6
+    PAGE = 7
+    COLUMN = 8
+    LINE_CLEAR_LEFT = 9
+    LINE_CLEAR_RIGHT = 10
+    LINE_CLEAR_ALL = 11
+
+
+class WD_LINE_SPACING(IntEnum):
+    ONE_POINT_FIVE = 1
+    AT_LEAST = 3
+    DOUBLE = 2
+    EXACTLY = 4
+    MULTIPLE = 5
+    SINGLE = 0
