@@ -1,10 +1,9 @@
 """WordprocessingML byte kernels exposed through a small C ABI."""
 
-from std.algorithm import parallelize
 from std.sys.info import simd_width_of as simdwidthof
 
-comptime BPtr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
-comptime IPtr = UnsafePointer[Int64, AnyOrigin[mut=True]]
+comptime BPtr = Pointer[UInt8, AnyOrigin[mut=True]]
+comptime IPtr = Pointer[Int64, AnyOrigin[mut=True]]
 comptime W = simdwidthof[DType.float64]()
 comptime BYTE_W = W * 8
 comptime ESCAPE_TASKS = 16
@@ -14,58 +13,58 @@ comptime PARALLEL_ESCAPE_BYTES = 1_048_576
 def copy_plain(src: BPtr, start: Int, count: Int, dst: BPtr, pos: Int) -> Int:
     var offset = 0
     while offset + BYTE_W <= count:
-        dst.store[alignment=1](
+        dst.unsafe_store[alignment=1](
             pos + offset,
-            src.load[width=BYTE_W, alignment=1](start + offset),
+            src.unsafe_load[width=BYTE_W, alignment=1](start + offset),
         )
         offset += BYTE_W
     while offset < count:
-        dst[pos + offset] = src[start + offset]
+        dst[unsafe_offset=pos + offset] = src[unsafe_offset=start + offset]
         offset += 1
     return pos + count
 
 
 def put_entity(dst: BPtr, pos: Int, kind: Int) -> Int:
     var p = pos
-    dst[p] = UInt8(38)
+    dst[unsafe_offset=p] = UInt8(38)
     p += 1
     if kind == 0:
-        dst[p] = UInt8(97)
-        dst[p + 1] = UInt8(109)
-        dst[p + 2] = UInt8(112)
-        dst[p + 3] = UInt8(59)
+        dst[unsafe_offset=p] = UInt8(97)
+        dst[unsafe_offset=p + 1] = UInt8(109)
+        dst[unsafe_offset=p + 2] = UInt8(112)
+        dst[unsafe_offset=p + 3] = UInt8(59)
         return p + 4
     if kind == 1:
-        dst[p] = UInt8(108)
-        dst[p + 1] = UInt8(116)
-        dst[p + 2] = UInt8(59)
+        dst[unsafe_offset=p] = UInt8(108)
+        dst[unsafe_offset=p + 1] = UInt8(116)
+        dst[unsafe_offset=p + 2] = UInt8(59)
         return p + 3
     if kind == 2:
-        dst[p] = UInt8(103)
-        dst[p + 1] = UInt8(116)
-        dst[p + 2] = UInt8(59)
+        dst[unsafe_offset=p] = UInt8(103)
+        dst[unsafe_offset=p + 1] = UInt8(116)
+        dst[unsafe_offset=p + 2] = UInt8(59)
         return p + 3
     if kind == 3:
-        dst[p] = UInt8(113)
-        dst[p + 1] = UInt8(117)
-        dst[p + 2] = UInt8(111)
-        dst[p + 3] = UInt8(116)
-        dst[p + 4] = UInt8(59)
+        dst[unsafe_offset=p] = UInt8(113)
+        dst[unsafe_offset=p + 1] = UInt8(117)
+        dst[unsafe_offset=p + 2] = UInt8(111)
+        dst[unsafe_offset=p + 3] = UInt8(116)
+        dst[unsafe_offset=p + 4] = UInt8(59)
         return p + 5
-    dst[p] = UInt8(35)
+    dst[unsafe_offset=p] = UInt8(35)
     if kind == 4:
-        dst[p + 1] = UInt8(57)
+        dst[unsafe_offset=p + 1] = UInt8(57)
     elif kind == 5:
-        dst[p + 1] = UInt8(49)
-        dst[p + 2] = UInt8(48)
-        dst[p + 3] = UInt8(59)
+        dst[unsafe_offset=p + 1] = UInt8(49)
+        dst[unsafe_offset=p + 2] = UInt8(48)
+        dst[unsafe_offset=p + 3] = UInt8(59)
         return p + 4
     else:
-        dst[p + 1] = UInt8(49)
-        dst[p + 2] = UInt8(51)
-        dst[p + 3] = UInt8(59)
+        dst[unsafe_offset=p + 1] = UInt8(49)
+        dst[unsafe_offset=p + 2] = UInt8(51)
+        dst[unsafe_offset=p + 3] = UInt8(59)
         return p + 4
-    dst[p + 2] = UInt8(59)
+    dst[unsafe_offset=p + 2] = UInt8(59)
     return p + 3
 
 
@@ -78,7 +77,7 @@ def escape_one(
     var end = start + count
     while i < end:
         if i + BYTE_W <= end:
-            var values = src.load[width=BYTE_W, alignment=1](i)
+            var values = src.unsafe_load[width=BYTE_W, alignment=1](i)
             var special = (
                 values.eq(SIMD[DType.uint8, BYTE_W](38))
                 | values.eq(SIMD[DType.uint8, BYTE_W](60))
@@ -94,7 +93,7 @@ def escape_one(
             if not special.reduce_or():
                 i += BYTE_W
                 continue
-        var c = src[i]
+        var c = src[unsafe_offset=i]
         var kind = -1
         if c == UInt8(38):
             kind = 0
@@ -126,7 +125,7 @@ def escaped_size(
     var end = start + count
     while i < end:
         if i + BYTE_W <= end:
-            var values = src.load[width=BYTE_W, alignment=1](i)
+            var values = src.unsafe_load[width=BYTE_W, alignment=1](i)
             var special = (
                 values.eq(SIMD[DType.uint8, BYTE_W](38))
                 | values.eq(SIMD[DType.uint8, BYTE_W](60))
@@ -142,7 +141,7 @@ def escaped_size(
             if not special.reduce_or():
                 i += BYTE_W
                 continue
-        var c = src[i]
+        var c = src[unsafe_offset=i]
         if c == UInt8(38):
             size += 4
         elif c == UInt8(60) or c == UInt8(62):
@@ -180,26 +179,23 @@ def mdx_escape_one(
         return -1
     var scratch = IPtr(unsafe_from_address=scratch_addr)
 
-    @parameter
-    def count_chunk(task: Int):
+    for task in range(ESCAPE_TASKS):
         var start = count * task // ESCAPE_TASKS
         var end = count * (task + 1) // ESCAPE_TASKS
-        scratch[task] = Int64(
+        scratch[unsafe_offset=task] = Int64(
             escaped_size(src, start, end - start, is_attribute)
         )
 
-    parallelize[count_chunk](ESCAPE_TASKS, ESCAPE_TASKS)
     var total = 0
     for task in range(ESCAPE_TASKS):
-        var size = Int(scratch[task])
-        scratch[task] = Int64(total)
+        var size = Int(scratch[unsafe_offset=task])
+        scratch[unsafe_offset=task] = Int64(total)
         total += size
         if total < 0 or total > dst_capacity:
             return -1
-    scratch[ESCAPE_TASKS] = Int64(total)
+    scratch[unsafe_offset=ESCAPE_TASKS] = Int64(total)
 
-    @parameter
-    def write_chunk(task: Int):
+    for task in range(ESCAPE_TASKS):
         var start = count * task // ESCAPE_TASKS
         var end = count * (task + 1) // ESCAPE_TASKS
         _ = escape_one(
@@ -207,11 +203,10 @@ def mdx_escape_one(
             start,
             end - start,
             dst,
-            Int(scratch[task]),
+            Int(scratch[unsafe_offset=task]),
             is_attribute,
         )
 
-    parallelize[write_chunk](ESCAPE_TASKS, ESCAPE_TASKS)
     return total
 
 
@@ -240,36 +235,39 @@ def mdx_escape_batch(
     var dst_offsets = IPtr(unsafe_from_address=dst_offsets_addr)
     var p = 0
     for i in range(count):
-        var start = Int(offsets[i])
-        var length = Int(lengths[i])
+        var start = Int(offsets[unsafe_offset=i])
+        var length = Int(lengths[unsafe_offset=i])
         if start < 0 or length < 0 or start > src_size or length > src_size - start:
             return -1
         var required = escaped_size(src, start, length, attribute != 0)
         if required < 0 or required > dst_capacity - p:
             return -1
-        dst_offsets[i] = Int64(p)
+        dst_offsets[unsafe_offset=i] = Int64(p)
         p = escape_one(
             src, start, length, dst, p, attribute != 0
         )
-    dst_offsets[count] = Int64(p)
+    dst_offsets[unsafe_offset=count] = Int64(p)
     return p
 
 
 def same_local_name(src: BPtr, start: Int, end: Int, a: Int, b: Int, c: Int) -> Bool:
     var local = start
     for i in range(start, end):
-        if src[i] == UInt8(58):
+        if src[unsafe_offset=i] == UInt8(58):
             local = i + 1
     var length = end - local
     if length == 1:
-        return src[local] == UInt8(a)
+        return src[unsafe_offset=local] == UInt8(a)
     if length == 2:
-        return src[local] == UInt8(a) and src[local + 1] == UInt8(b)
+        return (
+            src[unsafe_offset=local] == UInt8(a)
+            and src[unsafe_offset=local + 1] == UInt8(b)
+        )
     if length == 3:
         return (
-            src[local] == UInt8(a)
-            and src[local + 1] == UInt8(b)
-            and src[local + 2] == UInt8(c)
+            src[unsafe_offset=local] == UInt8(a)
+            and src[unsafe_offset=local + 1] == UInt8(b)
+            and src[unsafe_offset=local + 2] == UInt8(c)
         )
     return False
 
@@ -281,22 +279,26 @@ def mdx_analyze_xml(src_addr: Int, n: Int, counts_addr: Int) abi("C") -> Int:
     var src = BPtr(unsafe_from_address=src_addr)
     var counts = IPtr(unsafe_from_address=counts_addr)
     for i in range(6):
-        counts[i] = 0
+        counts[unsafe_offset=i] = 0
     var pos = 0
     var tags = 0
     while pos < n:
-        if src[pos] != UInt8(60):
+        if src[unsafe_offset=pos] != UInt8(60):
             pos += 1
             continue
         var i = pos + 1
         if i >= n:
             break
-        if src[i] == UInt8(47) or src[i] == UInt8(33) or src[i] == UInt8(63):
+        if (
+            src[unsafe_offset=i] == UInt8(47)
+            or src[unsafe_offset=i] == UInt8(33)
+            or src[unsafe_offset=i] == UInt8(63)
+        ):
             pos += 1
             continue
         var start = i
         while i < n:
-            var c = src[i]
+            var c = src[unsafe_offset=i]
             if (
                 c == UInt8(32) or c == UInt8(9) or c == UInt8(10)
                 or c == UInt8(13) or c == UInt8(47) or c == UInt8(62)
@@ -305,15 +307,15 @@ def mdx_analyze_xml(src_addr: Int, n: Int, counts_addr: Int) abi("C") -> Int:
             i += 1
         tags += 1
         if same_local_name(src, start, i, 112, 0, 0):
-            counts[1] += 1
+            counts[unsafe_offset=1] += 1
         elif same_local_name(src, start, i, 114, 0, 0):
-            counts[2] += 1
+            counts[unsafe_offset=2] += 1
         elif same_local_name(src, start, i, 116, 0, 0):
-            counts[3] += 1
+            counts[unsafe_offset=3] += 1
         elif same_local_name(src, start, i, 116, 98, 108):
-            counts[4] += 1
+            counts[unsafe_offset=4] += 1
         elif same_local_name(src, start, i, 116, 114, 0):
-            counts[5] += 1
+            counts[unsafe_offset=5] += 1
         pos = i
-    counts[0] = Int64(tags)
+    counts[unsafe_offset=0] = Int64(tags)
     return tags
