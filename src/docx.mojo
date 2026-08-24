@@ -1,5 +1,6 @@
 """WordprocessingML byte kernels exposed through a small C ABI."""
 
+from max.algorithm import parallelize
 from std.sys.info import simd_width_of as simdwidthof
 
 comptime BPtr = Pointer[UInt8, AnyOrigin[mut=True]]
@@ -75,24 +76,44 @@ def escape_one(
     var plain_start = start
     var i = start
     var end = start + count
-    while i < end:
-        if i + BYTE_W <= end:
-            var values = src.unsafe_load[width=BYTE_W, alignment=1](i)
-            var special = (
-                values.eq(SIMD[DType.uint8, BYTE_W](38))
-                | values.eq(SIMD[DType.uint8, BYTE_W](60))
-                | values.eq(SIMD[DType.uint8, BYTE_W](62))
+    while i + BYTE_W <= end:
+        var values = src.unsafe_load[width=BYTE_W, alignment=1](i)
+        var special = (
+            values.eq(SIMD[DType.uint8, BYTE_W](38))
+            | values.eq(SIMD[DType.uint8, BYTE_W](60))
+            | values.eq(SIMD[DType.uint8, BYTE_W](62))
+        )
+        if attribute:
+            special |= (
+                values.eq(SIMD[DType.uint8, BYTE_W](34))
+                | values.eq(SIMD[DType.uint8, BYTE_W](9))
+                | values.eq(SIMD[DType.uint8, BYTE_W](10))
+                | values.eq(SIMD[DType.uint8, BYTE_W](13))
             )
-            if attribute:
-                special |= (
-                    values.eq(SIMD[DType.uint8, BYTE_W](34))
-                    | values.eq(SIMD[DType.uint8, BYTE_W](9))
-                    | values.eq(SIMD[DType.uint8, BYTE_W](10))
-                    | values.eq(SIMD[DType.uint8, BYTE_W](13))
-                )
-            if not special.reduce_or():
-                i += BYTE_W
-                continue
+        if special.reduce_or():
+            comptime for lane in range(BYTE_W):
+                if special[lane]:
+                    var c = values[lane]
+                    var kind: Int
+                    if c == UInt8(38):
+                        kind = 0
+                    elif c == UInt8(60):
+                        kind = 1
+                    elif c == UInt8(62):
+                        kind = 2
+                    elif c == UInt8(34):
+                        kind = 3
+                    elif c == UInt8(9):
+                        kind = 4
+                    elif c == UInt8(10):
+                        kind = 5
+                    else:
+                        kind = 6
+                    p = copy_plain(src, plain_start, i + lane - plain_start, dst, p)
+                    p = put_entity(dst, p, kind)
+                    plain_start = i + lane + 1
+        i += BYTE_W
+    while i < end:
         var c = src[unsafe_offset=i]
         var kind = -1
         if c == UInt8(38):
@@ -123,24 +144,30 @@ def escaped_size(
     var size = count
     var i = start
     var end = start + count
-    while i < end:
-        if i + BYTE_W <= end:
-            var values = src.unsafe_load[width=BYTE_W, alignment=1](i)
-            var special = (
-                values.eq(SIMD[DType.uint8, BYTE_W](38))
-                | values.eq(SIMD[DType.uint8, BYTE_W](60))
-                | values.eq(SIMD[DType.uint8, BYTE_W](62))
+    while i + BYTE_W <= end:
+        var values = src.unsafe_load[width=BYTE_W, alignment=1](i)
+        var extra = (
+            values.eq(SIMD[DType.uint8, BYTE_W](38)).cast[DType.int16]()
+            * SIMD[DType.int16, BYTE_W](4)
+            + values.eq(SIMD[DType.uint8, BYTE_W](60)).cast[DType.int16]()
+            * SIMD[DType.int16, BYTE_W](3)
+            + values.eq(SIMD[DType.uint8, BYTE_W](62)).cast[DType.int16]()
+            * SIMD[DType.int16, BYTE_W](3)
+        )
+        if attribute:
+            extra += (
+                values.eq(SIMD[DType.uint8, BYTE_W](34)).cast[DType.int16]()
+                * SIMD[DType.int16, BYTE_W](5)
+                + values.eq(SIMD[DType.uint8, BYTE_W](9)).cast[DType.int16]()
+                * SIMD[DType.int16, BYTE_W](3)
+                + values.eq(SIMD[DType.uint8, BYTE_W](10)).cast[DType.int16]()
+                * SIMD[DType.int16, BYTE_W](4)
+                + values.eq(SIMD[DType.uint8, BYTE_W](13)).cast[DType.int16]()
+                * SIMD[DType.int16, BYTE_W](4)
             )
-            if attribute:
-                special |= (
-                    values.eq(SIMD[DType.uint8, BYTE_W](34))
-                    | values.eq(SIMD[DType.uint8, BYTE_W](9))
-                    | values.eq(SIMD[DType.uint8, BYTE_W](10))
-                    | values.eq(SIMD[DType.uint8, BYTE_W](13))
-                )
-            if not special.reduce_or():
-                i += BYTE_W
-                continue
+        size += Int(extra.reduce_add())
+        i += BYTE_W
+    while i < end:
         var c = src[unsafe_offset=i]
         if c == UInt8(38):
             size += 4
@@ -179,12 +206,15 @@ def mdx_escape_one(
         return -1
     var scratch = IPtr(unsafe_from_address=scratch_addr)
 
-    for task in range(ESCAPE_TASKS):
+    @__parameter
+    def measure_task(task: Int):
         var start = count * task // ESCAPE_TASKS
         var end = count * (task + 1) // ESCAPE_TASKS
         scratch[unsafe_offset=task] = Int64(
             escaped_size(src, start, end - start, is_attribute)
         )
+
+    parallelize[measure_task](ESCAPE_TASKS, ESCAPE_TASKS)
 
     var total = 0
     for task in range(ESCAPE_TASKS):
@@ -195,7 +225,8 @@ def mdx_escape_one(
             return -1
     scratch[unsafe_offset=ESCAPE_TASKS] = Int64(total)
 
-    for task in range(ESCAPE_TASKS):
+    @__parameter
+    def emit_task(task: Int):
         var start = count * task // ESCAPE_TASKS
         var end = count * (task + 1) // ESCAPE_TASKS
         _ = escape_one(
@@ -206,6 +237,8 @@ def mdx_escape_one(
             Int(scratch[unsafe_offset=task]),
             is_attribute,
         )
+
+    parallelize[emit_task](ESCAPE_TASKS, ESCAPE_TASKS)
 
     return total
 

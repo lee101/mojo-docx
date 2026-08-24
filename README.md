@@ -86,11 +86,11 @@ runs. A ratio above 1 means this port was faster.
 
 | workload | mojo-docx | python-docx 1.2.0 | upstream / Mojo |
 | --- | ---: | ---: | ---: |
-| Build + save 20k paragraphs | 1707.93 ms | 10620.02 ms | 6.22x |
-| Open + read 20k paragraphs | 655.89 ms | 1828.09 ms | 2.79x |
-| Round-trip save 20k paragraphs | 40.23 ms | 106.47 ms | 2.65x |
-| Build + save 200x20 table | 192.60 ms | 804.43 ms | 4.18x |
-| Escape 8 MiB OOXML text | 56.72 ms | 69.02 ms | 1.22x |
+| Build + save 20k paragraphs | 992.70 ms | 7543.35 ms | 7.60x |
+| Open + read 20k paragraphs | 448.73 ms | 1229.50 ms | 2.74x |
+| Round-trip save 20k paragraphs | 36.72 ms | 62.67 ms | 1.71x |
+| Build + save 200x20 table | 119.96 ms | 476.28 ms | 3.97x |
+| Escape 8 MiB OOXML text | 32.91 ms | 44.49 ms | 1.35x |
 
 An unchanged loaded XML part is retained as its original bytes and reused on
 save. Public document mutations invalidate that cache, and the freshly
@@ -99,8 +99,9 @@ blocks with a scalar tail. A single borrowed UTF-8 string crosses the FFI
 boundary without an intermediate Python bytes object. Large inputs are split
 across independent CPU tasks.
 
-XML escaping performs comparisons and copies per byte. There is no GPU path or
-GPU dependency.
+XML escaping performs no floating-point work and only comparisons and copies
+per byte, putting its arithmetic intensity well below roughly 2 FLOPs per byte.
+It is memory-bound, so there is no GPU path.
 
 ## How it works
 

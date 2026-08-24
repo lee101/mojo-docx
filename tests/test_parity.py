@@ -402,6 +402,14 @@ def test_mojo_escape_simd_tail(length):
     assert escape_batch([value]) == ["x" * (length - 1) + "&amp;"]
 
 
+def test_mojo_escape_multiple_entities_in_simd_block():
+    value = '&<x>"\t\n\r' + "x" * 56
+    assert escape_batch([value]) == ['&amp;&lt;x&gt;"\t\n\r' + "x" * 56]
+    assert escape_batch([value], attribute=True) == [
+        "&amp;&lt;x&gt;&quot;&#9;&#10;&#13;" + "x" * 56
+    ]
+
+
 @pytest.mark.parametrize(
     "length", [PARALLEL_ESCAPE_BYTES - 1, PARALLEL_ESCAPE_BYTES]
 )
