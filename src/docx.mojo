@@ -1,6 +1,5 @@
 """WordprocessingML byte kernels exposed through a small C ABI."""
 
-from max.algorithm import parallelize
 from std.sys.info import simd_width_of as simdwidthof
 
 comptime BPtr = Pointer[UInt8, AnyOrigin[mut=True]]
@@ -206,15 +205,14 @@ def mdx_escape_one(
         return -1
     var scratch = IPtr(unsafe_from_address=scratch_addr)
 
-    @__parameter
-    def measure_task(task: Int):
+    # Memory-bound byte scan (1 byte, a compare and a branch per iteration):
+    # ~1 flop/byte, so the task loop runs serially.
+    for task in range(ESCAPE_TASKS):
         var start = count * task // ESCAPE_TASKS
         var end = count * (task + 1) // ESCAPE_TASKS
         scratch[unsafe_offset=task] = Int64(
             escaped_size(src, start, end - start, is_attribute)
         )
-
-    parallelize[measure_task](ESCAPE_TASKS, ESCAPE_TASKS)
 
     var total = 0
     for task in range(ESCAPE_TASKS):
@@ -225,8 +223,8 @@ def mdx_escape_one(
             return -1
     scratch[unsafe_offset=ESCAPE_TASKS] = Int64(total)
 
-    @__parameter
-    def emit_task(task: Int):
+    # Same scan, then a bulk byte copy into the destination slice.
+    for task in range(ESCAPE_TASKS):
         var start = count * task // ESCAPE_TASKS
         var end = count * (task + 1) // ESCAPE_TASKS
         _ = escape_one(
@@ -237,8 +235,6 @@ def mdx_escape_one(
             Int(scratch[unsafe_offset=task]),
             is_attribute,
         )
-
-    parallelize[emit_task](ESCAPE_TASKS, ESCAPE_TASKS)
 
     return total
 
