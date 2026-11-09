@@ -14,6 +14,12 @@ _ALIGN_TO_XML = {
     WD_ALIGN_PARAGRAPH.RIGHT: "right",
     WD_ALIGN_PARAGRAPH.JUSTIFY: "both",
     WD_ALIGN_PARAGRAPH.DISTRIBUTE: "distribute",
+    # Matches docx.text.paragraph WD_PARAGRAPH_ALIGNMENT_TO_XML for the Kashida /
+    # Thai justify members; without these the setter raises KeyError upstream-style text.
+    WD_ALIGN_PARAGRAPH.JUSTIFY_MED: "mediumKashida",
+    WD_ALIGN_PARAGRAPH.JUSTIFY_HI: "highKashida",
+    WD_ALIGN_PARAGRAPH.JUSTIFY_LOW: "lowKashida",
+    WD_ALIGN_PARAGRAPH.THAI_JUSTIFY: "thaiDistribute",
 }
 _XML_TO_ALIGN = {value: key for key, value in _ALIGN_TO_XML.items()}
 

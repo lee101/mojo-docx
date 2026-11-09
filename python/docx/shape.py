@@ -23,6 +23,8 @@ class InlineShape:
 
     @width.setter
     def width(self, value: Length) -> None:
+        # Matches docx.shape.InlineShape.width: negative extent is a ValueError.
+        self._document._reject_negative_extent(value)
         self._document._mark_dirty()
         self._extent().set("cx", str(int(value)))
 
@@ -32,6 +34,8 @@ class InlineShape:
 
     @height.setter
     def height(self, value: Length) -> None:
+        # Matches docx.shape.InlineShape.height: negative extent is a ValueError.
+        self._document._reject_negative_extent(value)
         self._document._mark_dirty()
         self._extent().set("cy", str(int(value)))
 

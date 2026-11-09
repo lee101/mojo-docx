@@ -81,7 +81,9 @@ class Font:
             return
         if size is None:
             size = ET.SubElement(rpr, qn("w:sz"))
-        size.set(qn("w:val"), str(int(round(Length(value).pt * 2))))
+        # Matches docx.oxml.text.run font size: w:sz stores half-points truncated
+        # toward zero (Pt(10.3) -> "20"), not rounded.
+        size.set(qn("w:val"), str(int(Length(value).pt * 2)))
 
     @property
     def bold(self) -> bool | None:

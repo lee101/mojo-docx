@@ -19,14 +19,18 @@ NSMAP = {
 
 
 def qn(tag: str) -> str:
-    if tag.startswith("{"):
+    # Matches docx.oxml.ns.qn upstream: '{uri}local' passthrough, otherwise split
+    # "prefix:local" on ":" and raise KeyError("<prefix>") for an unknown prefix.
+    # (Already-braced-looking strings without "}" still go through prefix lookup.)
+    if tag.startswith("{") and "}" in tag:
         return tag
     prefix, local = tag.split(":", 1)
     try:
         return f"{{{NSMAP[prefix]}}}{local}"
     except KeyError as error:
-        raise KeyError(f"unknown namespace prefix: {prefix}") from error
+        raise KeyError(prefix) from error
 
 
 def nsdecls(*prefixes: str) -> str:
+    # Matches docx.oxml.ns.nsdecls upstream: KeyError("<prefix>") for unknown prefixes.
     return " ".join(f'xmlns:{prefix}="{NSMAP[prefix]}"' for prefix in prefixes)

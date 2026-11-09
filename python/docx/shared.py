@@ -27,24 +27,26 @@ class Length(int):
         return int(round(self / 635))
 
 
+# Matches docx.shared.Inches/Cm/Mm/Pt: upstream builds EMU with int(value * EMU_PER_UNIT)
+# (truncation toward zero), not round(); e.g. Inches(0.0000007) == 0 upstream.
 class Inches(Length):
     def __new__(cls, inches: float):
-        return Length.__new__(cls, int(round(inches * 914400)))
+        return Length.__new__(cls, int(inches * 914400))
 
 
 class Cm(Length):
     def __new__(cls, cm: float):
-        return Length.__new__(cls, int(round(cm * 360000)))
+        return Length.__new__(cls, int(cm * 360000))
 
 
 class Mm(Length):
     def __new__(cls, mm: float):
-        return Length.__new__(cls, int(round(mm * 36000)))
+        return Length.__new__(cls, int(mm * 36000))
 
 
 class Pt(Length):
     def __new__(cls, points: float):
-        return Length.__new__(cls, int(round(points * 12700)))
+        return Length.__new__(cls, int(points * 12700))
 
 
 class Emu(Length):
@@ -53,15 +55,20 @@ class Emu(Length):
 
 class RGBColor(tuple):
     def __new__(cls, r: int, g: int, b: int):
+        # Matches docx.shared.RGBColor: non-integer components raise TypeError
+        # ("RGBColor() takes three integer values 0-255"); out-of-range raise ValueError.
         values = (r, g, b)
+        if any(not isinstance(component, int) for component in values):
+            raise TypeError("RGBColor() takes three integer values 0-255")
         if any(not 0 <= component <= 255 for component in values):
-            raise ValueError("RGB components must be in 0..255")
+            raise ValueError("RGBColor() takes three integer values 0-255")
         return tuple.__new__(cls, values)
 
     @classmethod
     def from_string(cls, rgb_hex_str: str) -> "RGBColor":
-        if len(rgb_hex_str) != 6:
-            raise ValueError("RGB string must contain exactly six hex digits")
+        # Matches docx.shared.RGBColor.from_string: slice into three hex pairs and let
+        # int(..., 16) / the component range check raise ValueError; e.g. "123" and
+        # "1234567" fail downstream rather than on a length check here.
         return cls(*(int(rgb_hex_str[i : i + 2], 16) for i in (0, 2, 4)))
 
     def __str__(self) -> str:

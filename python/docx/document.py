@@ -88,6 +88,15 @@ class Document:
     def _mark_dirty(self) -> None:
         self._dirty = True
 
+    def _reject_negative_extent(self, *values) -> None:
+        # Matches docx.oxml simpletypes ST_UnsignedDecimalNumber validation behind
+        # InlineShape.width/height and add_picture: negative EMU extent is a ValueError.
+        for value in values:
+            if value is not None and int(value) < 0:
+                raise ValueError(
+                    f"value must be in range 0 to 27273042316900 inclusive, got {int(value)}"
+                )
+
     @property
     def paragraphs(self) -> list[Paragraph]:
         return [
@@ -110,6 +119,11 @@ class Document:
             Section(node, self)
             for node in self._element.iter(qn("w:sectPr"))
         ]
+
+    def __len__(self) -> int:
+        # Matches docx.document.Document.__len__ upstream: paragraph + table count.
+        # (Defined here; __len__ previously sat at the end of the class.)
+        return len(self.paragraphs) + len(self.tables)
 
     def iter_inner_content(self):
         for node in self._body:
@@ -160,6 +174,9 @@ class Document:
         )
 
     def _add_picture(self, run, image_path_or_stream, width=None, height=None):
+        # Matches docx.document.Document.add_picture extent validation (ValueError on
+        # negative width/height before any image is read).
+        self._reject_negative_extent(width, height)
         self._mark_dirty()
         image = read_image(image_path_or_stream)
         if width is None and height is None:
@@ -313,6 +330,3 @@ class Document:
 
     def save(self, path_or_stream) -> None:
         write_package(path_or_stream, self._serialized_parts())
-
-    def __len__(self) -> int:
-        return len(self.paragraphs) + len(self.tables)

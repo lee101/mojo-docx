@@ -64,6 +64,28 @@ class _Cell:
     def width(self) -> Length | None:
         width = child(self._tc, "w:tcPr", first=True).find(qn("w:tcW"))
         raw = None if width is None else width.get(qn("w:w"))
+        # Matches docx.table._Cell.width: an explicit cell width wins; otherwise the
+        # width comes from the cell's tblGrid column (default 8640 twips / columns).
+        if raw is None or int(raw) == 0:
+            return self._grid_width()
+        return Length(int(raw) * 635)
+
+    def _grid_width(self) -> Length | None:
+        # Matches docx.table._Cell.width default: the containing table's tblGrid.
+        table = self._parent
+        if not hasattr(table, "_tbl"):
+            return None
+        grid = table._tbl.find(qn("w:tblGrid"))
+        if grid is None or not len(grid):
+            return None
+        # _Cell._parent is the Table; its column index is the cell position in its row.
+        index = 0
+        for row in table.rows:
+            if any(cell._tc is self._tc for cell in row.cells):
+                index = [cell._tc is self._tc for cell in row.cells].index(True)
+                break
+        index = min(index, len(grid) - 1)
+        raw = grid[index].get(qn("w:w"))
         return None if raw is None else Length(int(raw) * 635)
 
     @width.setter
@@ -122,8 +144,16 @@ class _Column:
 
     @property
     def width(self) -> Length | None:
+        # Matches docx.table._Column.width upstream: the first cell's width, or the
+        # grid column width when the column has no cells (e.g. a 0-row table).
         cells = self.cells
-        return cells[0].width if cells else None
+        if cells:
+            return cells[0].width
+        grid = self._table._tbl.find(qn("w:tblGrid"))
+        if grid is None or self._index >= len(grid):
+            return None
+        raw = grid[self._index].get(qn("w:w"))
+        return None if raw is None else Length(int(raw) * 635)
 
     @width.setter
     def width(self, value: Length) -> None:
@@ -139,17 +169,24 @@ class Table:
 
     @classmethod
     def _new(cls, document, rows: int, cols: int, parent=None) -> "Table":
-        if rows < 0 or cols < 0:
-            raise ValueError("rows and cols must be non-negative")
         table = element("w:tbl")
         properties = ET.SubElement(table, qn("w:tblPr"))
         width = ET.SubElement(properties, qn("w:tblW"))
         width.set(qn("w:w"), "0")
         width.set(qn("w:type"), "auto")
         grid = ET.SubElement(table, qn("w:tblGrid"))
-        for _ in range(cols):
-            column = ET.SubElement(grid, qn("w:gridCol"))
-            column.set(qn("w:w"), "4320")
+        # Matches docx.document.Document.add_table grid sizing: the grid splits the
+        # 6-inch table width (8640 twips) evenly across the requested columns, so a
+        # 1-column grid is 8640 and each cell's default width follows its gridCol.
+        # Negative counts raise ValueError (upstream allows them silently via range();
+        # a negative grid is not a meaningful table, so it is rejected here).
+        if rows < 0 or cols < 0:
+            raise ValueError("rows and cols must be non-negative")
+        if cols:
+            grid_width = 8640 // cols
+            for _ in range(cols):
+                column = ET.SubElement(grid, qn("w:gridCol"))
+                column.set(qn("w:w"), str(grid_width))
         wrapper = cls(table, parent or document)
         for _ in range(rows):
             wrapper.add_row()
@@ -164,7 +201,13 @@ class Table:
 
     @property
     def columns(self) -> list[_Column]:
-        count = max((len(row.cells) for row in self.rows), default=0)
+        # Matches docx.table.Table.columns upstream: the column count comes from the
+        # tblGrid (so a 0-row table still reports its grid columns), falling back to
+        # the widest row only when the table has no grid.
+        grid = self._tbl.find(qn("w:tblGrid"))
+        count = len(grid) if grid is not None else max(
+            (len(row.cells) for row in self.rows), default=0
+        )
         return [_Column(self, index) for index in range(count)]
 
     def cell(self, row_idx: int, col_idx: int) -> _Cell:

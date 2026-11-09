@@ -24,7 +24,12 @@ class Section:
         return None if value is None else Length(int(value) * 635)
 
     def _twip_set(self, node: ET.Element, attr: str, value: Length) -> None:
+        # Matches docx.section.Section margin/size setters: assigning None removes
+        # the setting, so the getter returns None (upstream oxml LengthOrContent).
         self._document._mark_dirty()
+        if value is None:
+            node.attrib.pop(qn(attr), None)
+            return
         node.set(qn(attr), str(Length(value).twips))
 
     @property

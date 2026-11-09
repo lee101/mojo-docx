@@ -49,12 +49,14 @@ class CoreProperties:
         return parsed.replace(tzinfo=None)
 
     def _set_datetime(self, tag: str, value: datetime | None) -> None:
+        # Matches docx.opc.coreprops.CoreProperties created/modified setters upstream:
+        # None is not a datetime and the setter raises ValueError (it does not clear).
+        if value is None:
+            raise ValueError(
+                "property requires <type 'datetime.datetime'> object, got <class 'NoneType'>"
+            )
         self._document._mark_dirty()
         node = self._element.find(qn(tag))
-        if value is None:
-            if node is not None:
-                self._element.remove(node)
-            return
         if node is None:
             node = element(tag)
             self._element.append(node)
@@ -89,8 +91,12 @@ class CoreProperties:
 
     @revision.setter
     def revision(self, value: int) -> None:
-        if not isinstance(value, int) or value < 0:
-            raise ValueError("revision must be a non-negative integer")
+        # Matches docx.opc.coreprops.CoreProperties.revision upstream: must be a
+        # positive int (0, negatives, floats, strings and None raise ValueError).
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ValueError(
+                "revision property requires positive int, got %r" % (value,)
+            )
         self._set_text("cp:revision", str(value))
 
 
