@@ -80,17 +80,19 @@ Run it inside the environment with `pixi run python your_script.py`.
 
 ## Benchmarks
 
-Measured with `pixi run bench` on x86_64, Linux 6.8.0-136-generic, Python
+Measured with `pixi run bench` on x86_64, Linux 6.8.0-147-generic, Python
 3.13.14. Each row uses the same data; timings are the best of repeated warm
-runs. A ratio above 1 means this port was faster.
+runs. Values below are medians of four `pixi run bench` runs in this
+session (see `bench/verify.md` for per-run data and the fairness checks).
+A ratio above 1 means this port was faster.
 
 | workload | mojo-docx | python-docx 1.2.0 | upstream / Mojo |
 | --- | ---: | ---: | ---: |
-| Build + save 20k paragraphs | 992.70 ms | 7543.35 ms | 7.60x |
-| Open + read 20k paragraphs | 448.73 ms | 1229.50 ms | 2.74x |
-| Round-trip save 20k paragraphs | 36.72 ms | 62.67 ms | 1.71x |
-| Build + save 200x20 table | 119.96 ms | 476.28 ms | 3.97x |
-| Escape 8 MiB OOXML text | 32.91 ms | 44.49 ms | 1.35x |
+| Build + save 20k paragraphs | 1065.68 ms | 7493.14 ms | 7.03x |
+| Open + read 20k paragraphs | 386.15 ms | 1194.20 ms | 3.09x |
+| Round-trip save 20k paragraphs | 37.13 ms | 65.36 ms | 1.76x |
+| Build + save 200x20 table | 118.45 ms | 515.78 ms | 4.35x |
+| Escape 8 MiB OOXML text | 25.43 ms | 45.68 ms | 1.80x |
 
 An unchanged loaded XML part is retained as its original bytes and reused on
 save. Public document mutations invalidate that cache, and the freshly
